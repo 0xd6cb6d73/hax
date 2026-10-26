@@ -16,10 +16,14 @@ Changes to the hax-lib crate:
 Lean backend and library:
  - Add models of `RangeInclusive` and `RangeToInclusive`
  - Add a model of `unsigned_abs` for signed integers
+ - Add models of `contains` for `Range`, `RangeFrom`, `RangeTo` and
+   `RangeToInclusive`, and of `Range::is_empty`
 
 F* backend and library:
  - Add models of `RangeInclusive` and `RangeToInclusive`
  - Add a model of `unsigned_abs` for signed integers
+ - Add models of `contains` for `Range`, `RangeFrom`, `RangeTo` and
+   `RangeToInclusive`, and of `Range::is_empty`
 
 ### Fixed
 
