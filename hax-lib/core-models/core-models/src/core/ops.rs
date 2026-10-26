@@ -464,12 +464,39 @@ pub mod range {
             Bound::Unbounded
         }
     }
+    impl<T: PartialOrd<T>> Range<T> {
+        /// See [`std::ops::Range::contains`]
+        pub fn contains<U>(&self, item: &U) -> bool
+        where
+            T: PartialOrd<U>,
+            U: ?Sized + PartialOrd<T>,
+        {
+            bound_le(&self.start, item) && bound_lt(item, &self.end)
+        }
+        /// See [`std::ops::Range::is_empty`]
+        pub fn is_empty(&self) -> bool
+        where
+            T: PartialOrd<T>,
+        {
+            !bound_lt(&self.start, &self.end)
+        }
+    }
     impl<T> RangeBounds<T> for RangeTo<T> {
         fn start_bound(&self) -> Bound<&T> {
             Bound::Unbounded
         }
         fn end_bound(&self) -> Bound<&T> {
             Bound::Excluded(&self.end)
+        }
+    }
+    impl<T: PartialOrd<T>> RangeFrom<T> {
+        /// See [`std::ops::RangeFrom::contains`]
+        pub fn contains<U>(&self, item: &U) -> bool
+        where
+            T: PartialOrd<U>,
+            U: ?Sized + PartialOrd<T>,
+        {
+            bound_le(&self.start, item)
         }
     }
     impl<T> RangeBounds<T> for Range<T> {
@@ -480,42 +507,14 @@ pub mod range {
             Bound::Excluded(&self.end)
         }
     }
-    impl<T> RangeBounds<T> for (Bound<T>, Bound<T>) {
-        fn start_bound(&self) -> Bound<&T> {
-            bound_as_ref(&self.0)
-        }
-        fn end_bound(&self) -> Bound<&T> {
-            bound_as_ref(&self.1)
-        }
-    }
-    // std's `Bound::as_ref`, as a function: an inherent `impl Bound` block
-    // would take a positional `impl_N` name that must match real core's.
-    fn bound_as_ref<T>(bound: &Bound<T>) -> Bound<&T> {
-        match bound {
-            Bound::Included(x) => Bound::Included(x),
-            Bound::Excluded(x) => Bound::Excluded(x),
-            Bound::Unbounded => Bound::Unbounded,
-        }
-    }
-    // std may leave any bounds once exhausted: `start..start` is always empty.
-    impl<T> RangeBounds<T> for RangeInclusive<T> {
-        fn start_bound(&self) -> Bound<&T> {
-            Bound::Included(&self.start_)
-        }
-        fn end_bound(&self) -> Bound<&T> {
-            if self.exhausted {
-                Bound::Excluded(&self.start_)
-            } else {
-                Bound::Included(&self.end_)
-            }
-        }
-    }
-    impl<T> RangeBounds<T> for RangeToInclusive<T> {
-        fn start_bound(&self) -> Bound<&T> {
-            Bound::Unbounded
-        }
-        fn end_bound(&self) -> Bound<&T> {
-            Bound::Included(&self.end)
+    impl<T: PartialOrd<T>> RangeTo<T> {
+        /// See [`std::ops::RangeTo::contains`]
+        pub fn contains<U>(&self, item: &U) -> bool
+        where
+            T: PartialOrd<U>,
+            U: ?Sized + PartialOrd<T>,
+        {
+            bound_lt(item, &self.end)
         }
     }
     impl<T> RangeInclusive<T> {
@@ -540,9 +539,21 @@ pub mod range {
             (self.start_, self.end_)
         }
     }
-    // Stand-ins for real core's `impl RangeInclusive<usize>` and `Debug` impl.
+    // Stand-in for real core's `impl RangeInclusive<usize>`.
     impl RangeInclusive<usize> {}
-    impl<T> RangeInclusive<T> {}
+    // std may leave any bounds once exhausted: `start..start` is always empty.
+    impl<T> RangeBounds<T> for RangeInclusive<T> {
+        fn start_bound(&self) -> Bound<&T> {
+            Bound::Included(&self.start_)
+        }
+        fn end_bound(&self) -> Bound<&T> {
+            if self.exhausted {
+                Bound::Excluded(&self.start_)
+            } else {
+                Bound::Included(&self.end_)
+            }
+        }
+    }
     impl<T: PartialOrd<T>> RangeInclusive<T> {
         /// See [`std::ops::RangeInclusive::contains`]
         pub fn contains<U>(&self, item: &U) -> bool
@@ -559,6 +570,39 @@ pub mod range {
             T: PartialOrd<T>,
         {
             self.exhausted || !bound_le(&self.start_, &self.end_)
+        }
+    }
+    impl<T> RangeBounds<T> for RangeToInclusive<T> {
+        fn start_bound(&self) -> Bound<&T> {
+            Bound::Unbounded
+        }
+        fn end_bound(&self) -> Bound<&T> {
+            Bound::Included(&self.end)
+        }
+    }
+    impl<T: PartialOrd<T>> RangeToInclusive<T> {
+        /// See [`std::ops::RangeToInclusive::contains`]
+        pub fn contains<U>(&self, item: &U) -> bool
+        where
+            T: PartialOrd<U>,
+            U: ?Sized + PartialOrd<T>,
+        {
+            bound_le(item, &self.end)
+        }
+    }
+    impl<T> RangeBounds<T> for (Bound<T>, Bound<T>) {
+        fn start_bound(&self) -> Bound<&T> {
+            bound_as_ref(&self.0)
+        }
+        fn end_bound(&self) -> Bound<&T> {
+            bound_as_ref(&self.1)
+        }
+    }
+    fn bound_as_ref<T>(bound: &Bound<T>) -> Bound<&T> {
+        match bound {
+            Bound::Included(x) => Bound::Included(x),
+            Bound::Excluded(x) => Bound::Excluded(x),
+            Bound::Unbounded => Bound::Unbounded,
         }
     }
 
@@ -627,6 +671,37 @@ mod tests {
         }
 
         #[test]
+        fn test_range_contains(
+            start in any::<u8>(),
+            end in any::<u8>(),
+            same in any::<bool>(),
+            item in any::<u8>(),
+        ) {
+            // Independent draws are almost never equal: that edge is `same`.
+            let end = if same { start } else { end };
+            let model = super::range::Range { start, end };
+            let std_range = start..end;
+            prop_assert_eq!(model.contains(&item), std_range.contains(&item));
+            prop_assert_eq!(model.is_empty(), std_range.is_empty());
+        }
+
+        #[test]
+        fn test_one_sided_range_contains(
+            bound in any::<u8>(),
+            same in any::<bool>(),
+            item in any::<u8>(),
+        ) {
+            // Independent draws are almost never equal: that edge is `same`.
+            let item = if same { bound } else { item };
+            let from = super::range::RangeFrom { start: bound };
+            prop_assert_eq!(from.contains(&item), (bound..).contains(&item));
+            let to = super::range::RangeTo { end: bound };
+            prop_assert_eq!(to.contains(&item), (..bound).contains(&item));
+            let to_inclusive = super::range::RangeToInclusive { end: bound };
+            prop_assert_eq!(to_inclusive.contains(&item), (..=bound).contains(&item));
+        }
+
+        #[test]
         fn test_range_inclusive_exhausted(
             start in any::<u8>(),
             end in any::<u8>(),
@@ -678,6 +753,12 @@ mod tests {
         let item = Tripwire(1);
         assert!(!(Tripwire(2)..=Tripwire(u8::MAX)).contains(&item));
         let model = RangeInclusive::new(Tripwire(2), Tripwire(u8::MAX));
+        assert!(!model.contains(&item));
+        assert!(!(Tripwire(2)..Tripwire(u8::MAX)).contains(&item));
+        let model = crate::ops::range::Range {
+            start: Tripwire(2),
+            end: Tripwire(u8::MAX),
+        };
         assert!(!model.contains(&item));
         let model = (
             Bound::Excluded(Tripwire(1)),
@@ -759,7 +840,9 @@ mod tests {
 
         #[test]
         fn test_contains_uses_le_and_lt() {
-            use crate::ops::range::{Bound, RangeBounds, RangeInclusive};
+            use crate::ops::range::{
+                Bound, Range, RangeBounds, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive,
+            };
             assert!(Skewed.partial_cmp(&Skewed).is_none());
             assert!(Skewed != Skewed);
             assert!(crate::cmp::PartialOrd::partial_cmp(&Skewed, &Skewed).is_none());
@@ -767,6 +850,19 @@ mod tests {
             assert!((Skewed..=Skewed).contains(&Skewed));
             assert!(RangeInclusive::new(Skewed, Skewed).contains(&Skewed));
             assert!(!(Skewed..Skewed).contains(&Skewed));
+            assert!((Skewed..).contains(&Skewed));
+            assert!(RangeFrom { start: Skewed }.contains(&Skewed));
+            assert!(!(..Skewed).contains(&Skewed));
+            assert!(!RangeTo { end: Skewed }.contains(&Skewed));
+            assert!((..=Skewed).contains(&Skewed));
+            assert!(RangeToInclusive { end: Skewed }.contains(&Skewed));
+            let range = Range {
+                start: Skewed,
+                end: Skewed,
+            };
+            assert!(!range.contains(&Skewed));
+            assert!((Skewed..Skewed).is_empty());
+            assert!(range.is_empty());
             let model = (Bound::Included(Skewed), Bound::Excluded(Skewed));
             assert!(!RangeBounds::contains(&model, &Skewed));
             assert!(!(Skewed..=Skewed).is_empty());
